@@ -2,22 +2,23 @@
 out vec4 FragColor;
 //PBR test
 //pbr texture map is interpreted as [R,G,B]->[metallic, roughness, ao]
-//
 // BRDF implementation based off of https://github.com/JoeyDeVries/LearnOpenGL
 //D) GGX Distribution
 //F) Schlick-Fresnel
 //V) Schlick approximation of Smith solved with GGX
-
 
 const float PI = 3.14159265359;
 
 in VS_OUT {
     vec3 FragPos;
     vec2 TexCoords;
-    vec3 TangentLightPos;
-    vec3 TangentViewPos;
-    vec3 TangentFragPos;
+    //vec3 TangentLightPos;
+    //vec3 TangentViewPos;
+    //vec3 TangentFragPos;
+	mat3  TBN;
 } fs_in;
+
+
 
 uniform sampler2D diffuseMap;
 uniform sampler2D emissiveMap;
@@ -42,7 +43,8 @@ float DistributionGGX(vec3 N, vec3 H, float roughness)
 // ----------------------------------------------------------------------------
 float GeometrySchlickGGX(float NdotV, float roughness)
 {
-    float r = (roughness + 1.0);
+	float alpha = roughness*roughness;
+    float r = (alpha + 1.0);
     float k = (r*r) / 8.0;
 
     float nom   = NdotV;
@@ -78,9 +80,9 @@ void main()
      // obtain normal from normal map in range [0,1]
     vec3 normal = texture(normalMap, fs_in.TexCoords).rgb;
 
-	vec3 N = normal; //should be in world space or tangent space?
+	vec3 N = normal; //should this be [0,1]?
     // transform normal vector to range [-1,1]
-    normal = normalize(normal * 2.0 - 1.0);  // this normal is in tangent space
+    normal = (normal * 2.0 - 1.0);  
     //treat diffuse as albedo
     vec3 color = texture(diffuseMap, fs_in.TexCoords).rgb;//
 	//get emissive 
@@ -88,7 +90,7 @@ void main()
 	
 	//pbr stuff
 	//calculate reflectance
-	vec3 F0 = vec3(0.04); 
+	vec3 F0 = vec3(0.9); 
     F0 = mix(F0, color, metallic); //mix with how metallic
 
 	// reflectance equation
@@ -96,7 +98,8 @@ void main()
     for(int i = 0; i < 4; ++i) 
     {
         // calculate per-light radiance
-        vec3 L = normalize(lightPositions[i] - fs_in.FragPos);
+		//light should be in tangent space
+        vec3 L = normalize(fs_in.TBN*lightPositions[i] - fs_in.FragPos);
         vec3 H = normalize(V + L);
         float distance = length(lightPositions[i] - fs_in.FragPos);
         float attenuation = 1.0 / (distance * distance);
@@ -120,17 +123,18 @@ void main()
         // multiply kD by the inverse metalness such that only non-metals 
         // have diffuse lighting, or a linear blend if partly metal (pure metals
         // have no diffuse light).
-        kD *= 1.0 - metallic;	  
+        kD *= (1.0 - metallic);	  
 
         // scale light by NdotL
         float NdotL = max(dot(N, L), 0.0);        
 
         // add to outgoing radiance Lo
-        Lo += (kD * color / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
+        Lo += (kD * color / PI + kS*specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
     }   
     
-	vec3 ambient = vec3(0.5) * color * ao+emissive; 
-    vec3 colorMix = ambient + Lo;
+	vec3 ambient = vec3(0.7) * color * ao; 
+	vec3 colorMix = vec3(0.7)*ambient + 0.15*Lo+emissive;
+	
 
     FragColor = vec4(colorMix, 1.0);
 }
